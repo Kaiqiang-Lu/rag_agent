@@ -36,10 +36,10 @@ pip install python-dotenv wikipedia duckduckgo-search
 python scripts/fetch_wiki.py
 ```
 输出：data/wiki_XXXX.txt
-```bash
-清洗与向量化
-```
-python scripts/build_vectorstore.py
 
+清洗与向量化
+```bash
+python scripts/build_vectorstore.py
+```
 输出：indexes/wiki_index/（FAISS 索引）
 显示分块统计与章节分布。
