@@ -22,22 +22,23 @@ rag_agent/
 ```bash
 conda create -n rag_agent python=3.11
 conda activate rag_agent
+```
 安装依赖：
-
+```bash
 pip install "transformers>=4.42" "huggingface_hub>=0.24"
 pip install "sentence-transformers>=2.7"
 pip install faiss-cpu
 pip install "langchain>=0.2.16" "langchain-community>=0.2.16" "langgraph>=0.2.22" "tiktoken>=0.7"
 pip install python-dotenv wikipedia duckduckgo-search
-
+```
 知识库构建流程
-
+```bash
 python scripts/fetch_wiki.py
-
+```
 输出：data/wiki_XXXX.txt
-
+```bash
 清洗与向量化
-
+```
 python scripts/build_vectorstore.py
 
 输出：indexes/wiki_index/（FAISS 索引）
