@@ -3,7 +3,7 @@ RAG 文档问答智能体
 本项目基于 LangChain + FAISS + Gemini + CrossEncoder 实现了一个多轮问答智能体。
 系统可从用户上传的文本文件中构建知识库，支持上下文记忆、多轮对话与结果重排。
 
-项目结构
+● 项目结构
 ```bash
 rag_agent/
 ├── data/                 # 存放原始数据文件
@@ -11,17 +11,17 @@ rag_agent/
 ├── rag_chat_agent.py     # 主程序（Streamlit 多轮问答界面）
 └── README.md             # 项目说明文件
 ```
-环境配置
+● 环境配置
 Python 版本
 
 建议使用 Python 3.11
 
-创建虚拟环境
+● 创建虚拟环境
 ```bash
 conda create -n rag_agent python=3.11
 conda activate rag_agent
 ```
-安装依赖
+● 安装依赖
 
 本项目核心依赖包括 LangChain、FAISS、Gemini SDK、SentenceTransformers 等：
 ```bash
@@ -32,7 +32,7 @@ pip install "langchain>=0.2.16" "langchain-community>=0.2.16" "langgraph>=0.2.22
 pip install streamlit python-dotenv
 pip install google-generativeai
 ```
-系统功能说明
+● 系统功能说明
 1. 文档上传与知识库构建
 
 支持多文件 txt 上传，系统自动进行分块。
@@ -71,7 +71,7 @@ pip install google-generativeai
 
 输入框固定底部
 
-运行方式
+● 运行方式
 
 在项目目录下运行：
 ```bash
@@ -84,7 +84,7 @@ http://localhost:8501
 
 上传 txt 文档后，即可进行智能问答。
 
-系统工作流程
+● 系统工作流程
 
 用户上传文本文件（txt 格式）。
 
@@ -100,7 +100,7 @@ http://localhost:8501
 
 回答结果显示在前端对话界面中。
 
-注意事项
+● 注意事项
 
 .env 文件需包含：
 
