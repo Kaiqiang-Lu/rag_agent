@@ -1,7 +1,7 @@
 import os
 import tempfile
 import streamlit as st
-from typing import List, Optional
+from typing import List, Optional, Generator
 from dotenv import load_dotenv
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
@@ -46,7 +46,7 @@ def configure_retriever(uploaded_files):
 
     embeddings = HuggingFaceEmbeddings(model_name="moka-ai/m3e-large")
     vectordb = FAISS.from_documents(splits, embeddings)
-    return vectordb.as_retriever(search_kwargs={"k": 8}) 
+    return vectordb.as_retriever(search_kwargs={"k": 8})
 
 
 retriever = configure_retriever(uploaded_files)
@@ -60,12 +60,25 @@ google_client = genai.Client()
 class GeminiLLM(LLM):
     model: str = "gemini-2.5-flash"
 
+    # ### >>> Added: Streaming 输出（SDK兼容方式）
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
-        response = google_client.models.generate_content(
-            model=self.model,
-            contents=prompt
-        )
-        return response.text.strip()
+        try:
+            stream = google_client.models.generate_content_stream(
+                model=self.model,
+                contents=prompt
+            )
+        except:
+            response = google_client.models.generate_content(
+                model=self.model,
+                contents=prompt
+            )
+            return response.text.strip()
+
+        streamed_text = ""
+        for chunk in stream:
+            if hasattr(chunk, "text") and chunk.text:
+                streamed_text += chunk.text
+        return streamed_text
 
     @property
     def _identifying_params(self) -> dict:
@@ -79,11 +92,12 @@ class GeminiLLM(LLM):
 llm = GeminiLLM()
 
 
-# 重排模型 
+# 重排模型
 @st.cache_resource()
 def load_reranker():
     model_name = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
     return CrossEncoder(model_name)
+
 
 reranker = load_reranker()
 
@@ -99,14 +113,42 @@ def rerank_docs(query: str, retrieved_docs: List[str], top_k: int = 3) -> List[s
 # 聊天记忆
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-
 # Prompt 模板
 qa_prompt = PromptTemplate.from_template("{query}")
 
-
 # 构建 LLM 链
-qa_chain = LLMChain(llm=llm, prompt=qa_prompt)  
+qa_chain = LLMChain(llm=llm, prompt=qa_prompt)
 
+
+# 判断是否需要知识库检索
+def should_retrieve(user_query: str) -> bool:
+    decision_prompt = f"""
+你是一个检索判断助手。判断下面的问题是否可能需要查询上传的文档内容才能得到更准确的回答。
+
+若问题包含：
+- 文档主题、内容、关键词、句子含义、内容解释
+- 需要引用文档内容回答
+→ 回答 yes
+
+若问题明显是闲聊，如：
+- 你好
+- 你是谁
+- 你是 AI 吗
+→ 回答 no
+
+注意：如果不能确定，请回答 yes。
+只回答 yes 或 no。
+
+问题：{user_query}
+"""
+    try:
+        resp = google_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=decision_prompt
+        ).text.strip().lower()
+        return "yes" in resp
+    except:
+        return True
 
 
 # 页面交互逻辑
@@ -117,32 +159,36 @@ if "messages" not in st.session_state or st.sidebar.button("🧹 清除聊天记
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
+
 st.markdown("""
     <style>
-        /* 仅当 Streamlit 产生浅灰复制时，隐藏其重复元素 */
         .stChatFloatingInput + div .stChatMessage:last-child {
             display: none !important;
         }
     </style>
 """, unsafe_allow_html=True)
+
 user_query = st.chat_input(placeholder="请输入您的问题...")
 if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
     st.chat_message("user").write(user_query)
 
     with st.chat_message("assistant"):
-        with st.spinner("正在检索文档并生成回答..."):
+        with st.spinner("正在生成回答..."):
             try:
-                # 检索
-                retrieved_docs = retriever.get_relevant_documents(user_query)
-                retrieved_texts = [doc.page_content for doc in retrieved_docs]
+                # 判断是否需要检索
+                need_retrieve = should_retrieve(user_query)
 
-                # 重排
-                reranked_texts = rerank_docs(user_query, retrieved_texts, top_k=3)
+                retrieved_texts = []
+                if need_retrieve:
+                    retrieved_docs = retriever.get_relevant_documents(user_query)
+                    retrieved_texts = [doc.page_content for doc in retrieved_docs]
+                    reranked_texts = rerank_docs(user_query, retrieved_texts, top_k=3)
+                    context = "\n\n".join(reranked_texts)
+                else:
+                    context = ""
 
-                # 生成
-                context = "\n\n".join(reranked_texts)
-                # 从 memory 取出历史聊天记录
+                # 历史对话
                 past_msgs = memory.load_memory_variables({}).get("chat_history", [])
                 history_text = ""
                 if past_msgs:
@@ -150,30 +196,42 @@ if user_query:
                         role = "用户" if msg.type == "human" else "助手"
                         history_text += f"{role}: {msg.content}\n"
 
-                # 构造单一的 query
+                # 构造 Prompt
                 composed_query = f"""
-                你是一位中文知识助手，请根据以下文档信息回答最后的问题，要求自然、准确、逻辑清晰。
+你是一位中文文档知识小助手，你的回答应当简洁、准确、友好。
 
-                【文档内容】
-                {context}
+【文档内容】
+{context}
 
-                【历史对话】
-                {history_text}
+【历史对话】
+{history_text}
 
-                【当前问题】
-                {user_query}
+【当前问题】
+{user_query}
 
-                若无明确答案，请回答：“抱歉，我没有在上传文档中找到相关信息。”。
-                """
+若文档中无相关信息，请直接按常识回答。
+"""
 
-                response = qa_chain.invoke({"query": composed_query})
-                answer = response["text"]
+                # 流式输出
+                final_prompt = qa_prompt.format(query=composed_query)
 
-                # 手动写入memory
+                placeholder = st.empty()
+                full_text = ""
+
+                stream = google_client.models.generate_content_stream(
+                    model=llm.model,
+                    contents=final_prompt
+                )
+
+                for chunk in stream:
+                    if hasattr(chunk, "text") and chunk.text:
+                        full_text += chunk.text
+                        placeholder.write(full_text)
+
+                answer = full_text
                 memory.save_context({"input": user_query}, {"output": answer})
 
             except Exception as e:
                 answer = f"❌ 调用出错：{e}"
 
             st.session_state.messages.append({"role": "assistant", "content": answer})
-            st.write(answer)
