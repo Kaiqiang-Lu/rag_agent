@@ -60,7 +60,7 @@ google_client = genai.Client()
 class GeminiLLM(LLM):
     model: str = "gemini-2.5-flash"
 
-    # ### >>> Added: Streaming 输出（SDK兼容方式）
+    # Streaming 输出
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         try:
             stream = google_client.models.generate_content_stream(
